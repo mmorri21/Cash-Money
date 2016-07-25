@@ -7,9 +7,9 @@ from datetime import date
 close_str = 'Close'
 open_str = 'Open'
 return_str = 'return'
-num_stocks = 1000
-num_days = 3
-start = date(2015, 7, 1)
+num_stocks = 10000 # number of stocks to include in analysis. Will be limited to number of stocks in dataset
+num_days = 5 # Number of market days from present to look backwards to include in "recent return" history
+start = date(2016, 1, 1)
 end = date.today()
 
 def get_data(ticker, start, end, site):
@@ -46,10 +46,10 @@ def flag(beta, history, recent, stdev, mean):
     y = 1
     
     criteria = {beta: '<1',
-                history: '>8',
+                history: '>1', # should this be removed?  This is for all history, but time period is variable.  Mean seems to address this.
                 recent: '<-1',
                 stdev: '<2.5',
-                mean: '>0.2'}
+                mean: '>0.05'}
 
     operations = {'<': operator.lt,
                   '>': operator.gt}
@@ -75,7 +75,7 @@ tickers = df_tickers['Symbol'][:num_stocks]
 sp500 = get_data('^GSPC', start, end, 'yahoo')
 
 # Make one large dataframe
-df_temp = None
+df_temp = pd.DataFrame()
 for t in tickers:
     try: #some of these tickers may no longer be valid
         if '^' in t:
@@ -86,16 +86,16 @@ for t in tickers:
             df_temp = get_data(t, start, end, 'yahoo')
         except:
             missing_tickers.append(t) # for QA
-    if df_temp is not None:
+    if len(df_temp) >= num_days + 5:
         df = df.append(df_temp)
         df_temp = df_temp.merge(sp500[['Date', return_str]].rename(columns = {return_str: 'sp500return'}), how = 'inner', on = 'Date')# keep only dates that match (different stock exchanges have different days off
         output = output.append({'ticker': t,
                                 'beta': linregress(df_temp['sp500return'], df_temp[return_str])[0],
                                 'historical_return': return_rate(df_temp.tail(1).reset_index()[open_str][0], df_temp.ix[num_days, close_str]),
-                                'recent_return': return_rate(df_temp.ix[0, open_str], df_temp.ix[num_days - 1, close_str])}, ignore_index = True)
+                                'recent_return': return_rate(df_temp.ix[num_days - 1, open_str], df_temp.ix[0, close_str])}, ignore_index = True)
 
     # Reset
-    df_temp = None
+    df_temp = pd.DataFrame()
 
 # Add summary statistics of each stock's historical rate of return
 grouped = df[df['Date'] != max(df['Date'])].groupby('ticker')[return_str]
