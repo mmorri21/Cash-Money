@@ -92,7 +92,7 @@ for t in tickers:
         output = output.append({'ticker': t,
                                 'beta': linregress(df_temp['sp500return'], df_temp[return_str])[0],
                                 'historical_return': return_rate(df_temp.tail(1).reset_index()[open_str][0], df_temp.ix[num_days, close_str]),
-                                'recent_return': return_rate(df_temp.ix[0, open_str], df_temp.ix[num_days - 1, close_str])}, ignore_index = True) #####FIX THIS LINE
+                                'recent_return': return_rate(df_temp.ix[0, open_str], df_temp.ix[num_days - 1, close_str])}, ignore_index = True)
 
     # Reset
     df_temp = None
