@@ -12,29 +12,34 @@ num_days = 5 # Number of market days from present to look backwards to include i
 start = date(2016, 1, 1)
 end = date.today()
 
-def get_data(ticker, start, end, site):
+def get_data(ticker, start, end):
+    
+    global missing_tickers
+    df = None
+
     # Gets stock data from web
-    if site == 'yahoo':
-        
-        # Creates yahoo finance url
-        url = '''http://ichart.finance.yahoo.com/table.csv?s=''' + ticker + '''&a=''' + str(start.month - 1)
-        url += '''&b=''' + "%02d" % start.day + '''&c=''' + str(start.year) + '''&d=''' + str(end.month - 1)
-        url += '''&e=''' + "%02d" % end.day + '''&f=''' + str(end.year) + '''&g=d&ignore=.csv'''
-        df = pd.read_csv(url).rename(columns = {close_str: 'Non Adjust Close', 'Adj Close': close_str})
-        
-    elif site == 'google':
-        
+    try:
         # Creates Google Finance url
-        url = '''http://www.google.com/finance/historical?q=''' + ticker + '''&startdate=''' + start.strftime("%B")[:3] + '''%20'''
-        url += str(start.day) + ''',%20''' + str(start.year) + '''&enddate=''' + end.strftime("%B")[:3] + '''%20'''
+        url = '''http://www.google.com/finance/historical?q=''' + ticker.replace('^', '-') + '''&startdate=''' + start.strftime("%B")[:3]
+        url += '''%20''' + str(start.day) + ''',%20''' + str(start.year) + '''&enddate=''' + end.strftime("%B")[:3] + '''%20'''
         url += str(end.day) + ''',%20''' + str(end.year) + '''&output=csv'''
         df = pd.read_csv(url).rename(columns = {'\xef\xbb\xbfDate': 'Date'})
         df[open_str] = pd.to_numeric(df[open_str], errors = 'coerce')
         df[close_str] = pd.to_numeric(df[close_str], errors = 'coerce')
-    
-    df[return_str] = df.apply(lambda row: return_rate(row[close_str], row[open_str]), axis = 1)
-    df['ticker'] = ticker
-    df['Date'] = pd.to_datetime(df['Date'])
+    except:
+        try:
+            # Creates yahoo finance url
+            url = '''http://ichart.finance.yahoo.com/table.csv?s=''' + ticker + '''&a=''' + str(start.month - 1)
+            url += '''&b=''' + "%02d" % start.day + '''&c=''' + str(start.year) + '''&d=''' + str(end.month - 1)
+            url += '''&e=''' + "%02d" % end.day + '''&f=''' + str(end.year) + '''&g=d&ignore=.csv'''
+            df = pd.read_csv(url).rename(columns = {close_str: 'Non Adjust Close', 'Adj Close': close_str})            
+        except:
+            missing_tickers.append(ticker)
+
+    if (df is not None) and (len(df) > 0):
+        df[return_str] = df.apply(lambda row: return_rate(row[close_str], row[open_str]), axis = 1)
+        df['ticker'] = ticker
+        df['Date'] = pd.to_datetime(df['Date'])
     
     return df
 
@@ -69,33 +74,26 @@ missing_tickers = []
 # Define parameters
 df_tickers = pd.read_csv("http://www.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nyse&render=download")
 df_tickers = df_tickers.append(pd.read_csv("http://www.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nasdaq&render=download"))
-tickers = df_tickers['Symbol'][:num_stocks]
+tickers = df_tickers['Symbol'][:num_stocks].drop_duplicates().reset_index(drop = True)
 #tickers = ['NAV', 'PCAR', 'VOLV-B.ST', 'DAI.DE', 'CAT']
 
-sp500 = get_data('^GSPC', start, end, 'yahoo')
+# Get Data
+data = tickers.apply(lambda x: get_data(x, start, end))
 
-# Make one large dataframe
-df_temp = pd.DataFrame()
-for t in tickers:
-    try: #some of these tickers may no longer be valid
-        if '^' in t:
-            t = t.replace('^', '-') # Reformat to how Google expects tickers
-        df_temp = get_data(t, start, end, 'google')
-    except:
-        try:
-            df_temp = get_data(t, start, end, 'yahoo')
-        except:
-            missing_tickers.append(t) # for QA
-    if len(df_temp) >= num_days + 5:
-        df = df.append(df_temp)
-        df_temp = df_temp.merge(sp500[['Date', return_str]].rename(columns = {return_str: 'sp500return'}), how = 'inner', on = 'Date')# keep only dates that match (different stock exchanges have different days off
-        output = output.append({'ticker': t,
-                                'beta': linregress(df_temp['sp500return'], df_temp[return_str])[0],
-                                'historical_return': return_rate(df_temp.tail(1).reset_index()[open_str][0], df_temp.ix[num_days, close_str]),
-                                'recent_return': return_rate(df_temp.ix[num_days - 1, open_str], df_temp.ix[0, close_str])}, ignore_index = True)
+# Get S&P500 data for benchmark
+sp500 = get_data('^GSPC', start, end)
 
-    # Reset
-    df_temp = pd.DataFrame()
+for d in data:
+    if len(d) >= num_days + 5:
+        df = df.append(d.merge(sp500[['Date', return_str]].rename(columns = {return_str: 'sp500return'}), how = 'inner', on = 'Date'))# keep only dates that match (different stock exchanges have different days off
+
+output['ticker'] = tickers
+output['beta'] = output.apply(lambda row: linregress(df[df['ticker'] == row['ticker']]['sp500return'],
+                                                      df[df['ticker'] == row['ticker']][return_str])[0], axis = 1)
+output['historical_return'] = output.apply(lambda row: return_rate(df[df['ticker'] == row['ticker']].tail(1).reset_index()[open_str][0],
+                                                                    df[df['ticker'] == row['ticker']].ix[num_days, close_str]), axis = 1)
+output['recent_return'] = output.apply(lambda row: return_rate(df[df['ticker'] == row['ticker']].ix[num_days - 1, open_str],
+                                                                df[df['ticker'] == row['ticker']].ix[0, close_str]), axis = 1)
 
 # Add summary statistics of each stock's historical rate of return
 grouped = df[df['Date'] != max(df['Date'])].groupby('ticker')[return_str]
