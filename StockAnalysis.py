@@ -83,9 +83,13 @@ data = tickers.apply(lambda x: get_data(x, start, end))
 # Get S&P500 data for benchmark
 sp500 = get_data('^GSPC', start, end)
 
+# Create output dataframe with information about each ticker for the time period selected
 for d in data:
-    if len(d) >= num_days + 5:
-        df = df.append(d.merge(sp500[['Date', return_str]].rename(columns = {return_str: 'sp500return'}), how = 'inner', on = 'Date'))# keep only dates that match (different stock exchanges have different days off
+    try: # If d is Nonetype
+        if len(d) >= num_days + 5:
+            df = df.append(d.merge(sp500[['Date', return_str]].rename(columns = {return_str: 'sp500return'}), how = 'inner', on = 'Date'))# keep only dates that match (different stock exchanges have different days off
+    except:
+        Exception
 
 output['ticker'] = tickers
 output['beta'] = output.apply(lambda row: linregress(df[df['ticker'] == row['ticker']]['sp500return'],
