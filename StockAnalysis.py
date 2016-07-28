@@ -1,13 +1,16 @@
 from __future__ import division
 import pandas as pd
 import operator
+import time
 from scipy.stats import linregress
 from datetime import date
+
+start_time = time.time()
 
 close_str = 'Close'
 open_str = 'Open'
 return_str = 'return'
-num_stocks = 10000 # number of stocks to include in analysis. Will be limited to number of stocks in dataset
+num_stocks = 3000 # number of stocks to include in analysis. Will be limited to number of stocks in dataset
 num_days = 5 # Number of market days from present to look backwards to include in "recent return" history
 start = date(2016, 1, 1)
 end = date.today()
@@ -91,7 +94,7 @@ for d in data:
     except:
         Exception
 
-output['ticker'] = tickers
+output['ticker'] = df['ticker'].unique()
 output['beta'] = output.apply(lambda row: linregress(df[df['ticker'] == row['ticker']]['sp500return'],
                                                       df[df['ticker'] == row['ticker']][return_str])[0], axis = 1)
 output['historical_return'] = output.apply(lambda row: return_rate(df[df['ticker'] == row['ticker']].tail(1).reset_index()[open_str][0],
@@ -108,3 +111,8 @@ for key, value in stats.iteritems():
 
 # Compare historical rates of return vs. recent
 output['flag'] = output.apply(lambda row: flag(row['beta'], row['historical_return'], row['recent_return'], row['stdev'], row['mean']), axis = 1)
+output.to_csv(r'C:/Users/MAtt/Desktop/output.csv', index = False)
+
+end_time = time.time()
+time_seconds = end_time - start_time
+print 'The program took ' + str(time_seconds/60) + ' minutes.'
